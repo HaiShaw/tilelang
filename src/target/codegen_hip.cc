@@ -37,11 +37,11 @@ static std::string GetFP8Type(DataType type) {
     LOG(FATAL) << "Only support scalar and vector types of width (2, 4, 8, 16) "
                   "for FP8";
   }
-  if (type.code() == DataType::kFloat8_e4m3fn) {
+  if (type.is_float8_e4m3fn() || type.is_float8_e4m3fnuz() ||
+      type.is_float8_e4m3()) {
     stream << "fp8_e4" << vec << "_t";
-  } else if (type.code() == DataType::kFloat8_e4m3fnuz) {
-    stream << "fp8_e4" << vec << "_t";
-  } else if (type.code() == DataType::kFloat8_e5m2) {
+  } else if (type.is_float8_e5m2() || type.is_float8_e5m2fnuz() ||
+             type.is_float8_e5m2()) {
     stream << "fp8_e5" << vec << "_t";
   } else {
     LOG(FATAL) << "Unsupported FP8 type in HIP codegen";
@@ -923,7 +923,9 @@ void CodeGenTileLangHIP::VisitExpr_(const CallNode *op, std::ostream &os) {
         {"bfloat16x4", "bfloat16x4"},
         {"float32x4", "float32x4"},
         {"float8_e4m3fnuzx4", "fp8_e4_4_t"},
+        {"float8_e4m3fnx4",   "fp8_e4_4_t"},
         {"float8_e4m3fnuzx8", "long"},
+        {"float8_e4m3fnx8",   "long"},
         {"float32x16", "float32x16"}};
     std::string call_mfma_code = R"({
     *((({C_dtype}*){c_ref}) + {c_bias}) = {mfma_buildin}(*((({A_dtype}*){a_ref}) + {a_bias}),
@@ -1158,6 +1160,10 @@ inline void PrintConst(const FloatImmNode *op, std::ostream &os,
   // Type code is kBFloat
   if (op->dtype.is_bfloat16()) {
     os << "bfloat16_t";
+    os << '(' << std::scientific << op->value << 'f' << ')';
+    return;
+  } else if (op->dtype.is_float8_e4m3fn()) {
+    os << "fp8_e4_t";
     os << '(' << std::scientific << op->value << 'f' << ')';
     return;
   } else if (op->dtype.is_float8_e4m3fnuz()) {
