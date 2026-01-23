@@ -143,7 +143,14 @@ GemmInst GemmNode::getGemmInst(int block_size, Target target) const {
 
 std::pair<int, int> GemmWarpPolicyNode::computeWarpPartition(
     int M, int N, int block_size, Target target, GemmInst gemm_inst) const {
-  int num_warps = block_size / TargetGetWarpSize(target);
+  int warp_size = TargetGetWarpSize(target);
+  if (warp_size == 0) {
+    warp_size = 32;
+  }
+  int num_warps = block_size / warp_size;
+  if (num_warps == 0) {
+    num_warps = 1;
+  }
   if (gemm_inst == GemmInst::kTCGEN5MMA) {
     return {1, num_warps}; // TCGEN5MMA doesn't care about warp partitioning
   }
@@ -249,6 +256,9 @@ std::pair<int, int> GemmWarpPolicyNode::computeWarpPartition(
     if (M % (m_warp * kMPerWarp) != 0) {
       // Calculate how many warps we can use for M
       int max_m_warps = M / kMPerWarp;
+      if (max_m_warps == 0) {
+        max_m_warps = 1;
+      }
       m_warp = max_m_warps;
       // Use remaining warps for N
       n_warp = num_warps / m_warp;
@@ -265,6 +275,9 @@ std::pair<int, int> GemmWarpPolicyNode::computeWarpPartition(
     if (N % (n_warp * kNPerWarp) != 0) {
       // Calculate how many warps we can use for N
       int max_n_warps = N / kNPerWarp;
+      if (max_n_warps == 0) {
+        max_n_warps = 1;
+      }
       n_warp = max_n_warps;
       // Use remaining warps for M
       m_warp = num_warps / n_warp;
@@ -502,12 +515,16 @@ Stmt GemmNode::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
 
     // Since TCGEN5MMA atoms provided by CUTLASS always have an internal
     // `elect_one_sync()`, we check if we are calling it using full warps
-    constexpr int warp_size = 32;
+    int warp_size = TargetGetWarpSize(T.target);
+    if (warp_size == 0) {
+      warp_size = 32;
+    }
     ICHECK(
         analyzer->CanProveEqual(FloorMod(T.thread_bounds->min, warp_size), 0) &&
         analyzer->CanProveEqual(FloorMod(T.thread_bounds->extent, warp_size),
                                 0))
-        << "TCGEN5MMA requires thread bounds to be multiples of warp size (32) "
+        << "TCGEN5MMA requires thread bounds to be multiples of warp size ("
+        << warp_size << ") "
            "and aligned to warps.";
     if (analyzer->CanProveEqual(T.thread_bounds->extent, warp_size)) {
       // If the thread bounds is exactly one warp, we can use the original call
